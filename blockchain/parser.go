@@ -20,6 +20,11 @@ type Parser interface {
 	GetTransactions(address string) []Transaction
 }
 
+type AddressTransactions struct {
+	Inbound  []Transaction
+	Outbound []Transaction
+}
+
 type Transaction struct {
 	Hash     string // Transaction hash
 	From     string // Sender address
@@ -33,7 +38,7 @@ type EthereumParser struct {
 	subscribedAddresses map[string]bool
 	// transactions stores a list of transactions for each subscribed address.
 	// The key is the address, and the value is a slice of Transactions.
-	transactions map[string][]Transaction
+	transactions map[string]AddressTransactions
 	client       *client.JSONRPCClient // JSON-RPC client to interact with the blockchain node
 	mutex        sync.RWMutex          // Protects subscribedAddresses and transactions
 }
@@ -41,7 +46,7 @@ type EthereumParser struct {
 func NewEthereumParser(client *client.JSONRPCClient) *EthereumParser {
 	return &EthereumParser{
 		subscribedAddresses: make(map[string]bool),
-		transactions:        make(map[string][]Transaction),
+		transactions:        make(map[string]AddressTransactions),
 		client:              client,
 	}
 }
@@ -86,14 +91,13 @@ func (p *EthereumParser) GetTransactions(address string) []Transaction {
 	p.mutex.RLock()
 	defer p.mutex.Unlock()
 
-	// Check if there are transactions stored for the given address
-	if txs, exists := p.transactions[address]; exists {
-		// Return a copy of the slice to avoid external modifications
-		copiedTxs := make([]Transaction, len(txs))
-		copy(copiedTxs, txs)
-		return copiedTxs
+	var transactions []Transaction
+
+	if addrTxs, exists := p.transactions[address]; exists {
+		// Combine inbound and outbound transactions
+		transactions = append(transactions, addrTxs.Inbound...)
+		transactions = append(transactions, addrTxs.Outbound...)
 	}
 
-	// Return an empty slice if no transactions are found
-	return []Transaction{}
+	return transactions
 }

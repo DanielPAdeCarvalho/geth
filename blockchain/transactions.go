@@ -7,7 +7,6 @@ import (
 )
 
 // FetchBlockTransactions fetches transactions from a specific block and updates the transactions map.
-// This is a simplified example. In practice, you'd need to handle pagination or batch requests for blocks with many transactions.
 func (e *EthereumParser) FetchBlockTransactions(blockNumber int) {
 	blockNumberHex := fmt.Sprintf("0x%x", blockNumber)
 	result, err := e.client.Call("eth_getBlockByNumber", []interface{}{blockNumberHex, true})
@@ -24,9 +23,24 @@ func (e *EthereumParser) FetchBlockTransactions(blockNumber int) {
 		return
 	}
 
+	e.mutex.Lock()
+	defer e.mutex.Unlock()
+
+	// Ensure this loop is within a method of EthereumParser where e.mutex is defined.
 	for _, tx := range block.Transactions {
-		if _, ok := e.subscribedAddresses[tx.From]; ok || e.subscribedAddresses[tx.To] {
-			e.transactions[tx.To] = append(e.transactions[tx.To], tx)
+		// Process outbound transactions
+		if _, ok := e.subscribedAddresses[tx.From]; ok {
+			addrTxs := e.transactions[tx.From]
+			addrTxs.Outbound = append(addrTxs.Outbound, tx)
+			e.transactions[tx.From] = addrTxs
+		}
+
+		// Process inbound transactions
+		if _, ok := e.subscribedAddresses[tx.To]; ok {
+			addrTxs := e.transactions[tx.To]
+			addrTxs.Inbound = append(addrTxs.Inbound, tx)
+			e.transactions[tx.To] = addrTxs
 		}
 	}
+
 }
