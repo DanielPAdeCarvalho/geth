@@ -2,7 +2,7 @@ package blockchain
 
 import (
 	"encoding/json"
-	"log"
+	"fmt"
 	"math/big"
 	"sync"
 	"truswallet/client"
@@ -11,7 +11,7 @@ import (
 // Parser defines an interface for parsing blockchain data.
 type Parser interface {
 	// last parsed block
-	GetCurrentBlock() int
+	GetCurrentBlock() (int, error)
 
 	// add address to observer
 	Subscribe(address string) bool
@@ -39,11 +39,11 @@ type EthereumParser struct {
 	// transactions stores a list of transactions for each subscribed address.
 	// The key is the address, and the value is a slice of Transactions.
 	transactions map[string]AddressTransactions
-	client       *client.JSONRPCClient // JSON-RPC client to interact with the blockchain node
-	mutex        sync.RWMutex          // Protects subscribedAddresses and transactions
+	client       client.JSONRPCClient // JSON-RPC client to interact with the blockchain node
+	mutex        sync.RWMutex         // Protects subscribedAddresses and transactions
 }
 
-func NewEthereumParser(client *client.JSONRPCClient) *EthereumParser {
+func NewEthereumParser(client client.JSONRPCClient) *EthereumParser {
 	return &EthereumParser{
 		subscribedAddresses: make(map[string]bool),
 		transactions:        make(map[string]AddressTransactions),
@@ -52,23 +52,24 @@ func NewEthereumParser(client *client.JSONRPCClient) *EthereumParser {
 }
 
 // GetCurrentBlock calls the JSON-RPC eth_blockNumber method to get the latest block number.
-func (p *EthereumParser) GetCurrentBlock() int {
+func (p *EthereumParser) GetCurrentBlock() (int, error) {
 	result, err := p.client.Call("eth_blockNumber", nil)
 	if err != nil {
-		log.Fatalf("Failed to get current block number: %v", err)
+		return 0, fmt.Errorf("failed to get current block number: %w", err)
 	}
 
 	var blockNumberHex string
 	if err := json.Unmarshal(result, &blockNumberHex); err != nil {
-		log.Fatalf("Failed to unmarshal block number: %v", err)
+		return 0, fmt.Errorf("failed to unmarshal block number: %w", err)
 	}
 
-	blockNumber, ok := new(big.Int).SetString(blockNumberHex[2:], 16) // Convert hex string to big.Int
+	// Convert hex string to big.Int
+	blockNumber, ok := new(big.Int).SetString(blockNumberHex[2:], 16)
 	if !ok {
-		log.Fatalf("Failed to parse block number")
+		return 0, fmt.Errorf("failed to parse block number from %s", blockNumberHex)
 	}
 
-	return int(blockNumber.Int64()) // Convert to int for the interface
+	return int(blockNumber.Int64()), nil // Convert to int for the interface
 }
 
 // Subscribe adds an Ethereum address to the list of subscribed addresses.
@@ -89,7 +90,7 @@ func (p *EthereumParser) Subscribe(address string) bool {
 
 func (p *EthereumParser) GetTransactions(address string) []Transaction {
 	p.mutex.RLock()
-	defer p.mutex.Unlock()
+	defer p.mutex.RUnlock()
 
 	var transactions []Transaction
 

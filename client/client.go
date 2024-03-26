@@ -8,12 +8,16 @@ import (
 	"net/http"
 )
 
-type JSONRPCClient struct {
+type JSONRPCClient interface {
+	Call(method string, params []interface{}) (json.RawMessage, error)
+}
+
+type JSONRPC struct {
 	url string
 }
 
-func NewJSONRPCClient(url string) *JSONRPCClient {
-	return &JSONRPCClient{url: url}
+func NewJSONRPC(url string) *JSONRPC {
+	return &JSONRPC{url: url}
 }
 
 type jsonRPCRequest struct {
@@ -40,7 +44,7 @@ func (e *jsonRPCError) Error() string {
 	return fmt.Sprintf("RPC Error %d: %s", e.Code, e.Message)
 }
 
-func (c *JSONRPCClient) Call(method string, params []interface{}) (json.RawMessage, error) {
+func (c *JSONRPC) Call(method string, params []interface{}) (json.RawMessage, error) {
 	request := jsonRPCRequest{
 		JSONRPC: "2.0",
 		Method:  method,

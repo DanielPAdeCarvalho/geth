@@ -1,4 +1,4 @@
-package store
+package storage
 
 var SubscribedAddresses = make(map[string]bool)
 

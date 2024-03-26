@@ -1,4 +1,4 @@
-package store
+package storage
 
 import (
 	"sync"
@@ -17,7 +17,7 @@ var _ Storage = (*InMemoryStorage)(nil)
 
 // InMemoryStorage is an in-memory storage for transactions.
 type InMemoryStorage struct {
-	mu           sync.Mutex                      // protects the following
+	mu           sync.RWMutex
 	transactions map[uint64][]types.Transaction  // maps block number to transactions
 	addressIndex map[string][]*types.Transaction // maps address to transactions
 }
@@ -48,8 +48,8 @@ func (s *InMemoryStorage) SaveTransactions(blockNumber uint64, transactions []ty
 
 // GetTransactionsByAddress returns all transactions for a given address.
 func (s *InMemoryStorage) GetTransactionsByAddress(address string) ([]types.Transaction, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 
 	if txs, ok := s.addressIndex[address]; ok {
 		// Make a copy to avoid returning a reference to the internal slice.
@@ -59,5 +59,5 @@ func (s *InMemoryStorage) GetTransactionsByAddress(address string) ([]types.Tran
 		}
 		return copy, nil
 	}
-	return nil, nil // No transactions found for the address.
+	return nil, nil
 }

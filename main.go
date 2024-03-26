@@ -10,7 +10,11 @@ import (
 var ethereumParser blockchain.Parser = &blockchain.EthereumParser{}
 
 func getCurrentBlock(w http.ResponseWriter, r *http.Request) {
-	block := ethereumParser.GetCurrentBlock()
+	block, err := ethereumParser.GetCurrentBlock()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	json.NewEncoder(w).Encode(map[string]int{"currentBlock": block})
 }
 
