@@ -4,9 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rlp"
 )
 
-// FetchBlockTransactions fetches transactions from a specific block and updates the transactions map.
+// FetchBlockTransactions fetches transactions from a specific block and updates the storage.
 func (e *EthereumParser) FetchBlockTransactions(blockNumber int) {
 	blockNumberHex := fmt.Sprintf("0x%x", blockNumber)
 	result, err := e.client.Call("eth_getBlockByNumber", []interface{}{blockNumberHex, true})
@@ -15,32 +19,28 @@ func (e *EthereumParser) FetchBlockTransactions(blockNumber int) {
 		return
 	}
 
+	// Parse the result to get transactions
 	var block struct {
-		Transactions []Transaction `json:"transactions"`
+		Transactions []json.RawMessage `json:"transactions"`
 	}
 	if err := json.Unmarshal(result, &block); err != nil {
 		log.Printf("Failed to unmarshal block: %v", err)
 		return
 	}
 
-	e.mutex.Lock()
-	defer e.mutex.Unlock()
-
-	// Ensure this loop is within a method of EthereumParser where e.mutex is defined.
-	for _, tx := range block.Transactions {
-		// Process outbound transactions
-		if _, ok := e.subscribedAddresses[tx.From]; ok {
-			addrTxs := e.transactions[tx.From]
-			addrTxs.Outbound = append(addrTxs.Outbound, tx)
-			e.transactions[tx.From] = addrTxs
+	// Convert transactions to go-ethereum's types.Transaction format
+	var transactions []types.Transaction
+	for _, txData := range block.Transactions {
+		var tx types.Transaction
+		if err := rlp.DecodeBytes(hexutil.MustDecode(string(txData)), &tx); err != nil {
+			log.Printf("Failed to decode transaction: %v", err)
+			continue
 		}
-
-		// Process inbound transactions
-		if _, ok := e.subscribedAddresses[tx.To]; ok {
-			addrTxs := e.transactions[tx.To]
-			addrTxs.Inbound = append(addrTxs.Inbound, tx)
-			e.transactions[tx.To] = addrTxs
-		}
+		transactions = append(transactions, tx)
 	}
 
+	// Save the transactions using InMemoryStorage
+	if err := e.storage.SaveTransactions(uint64(blockNumber), transactions); err != nil {
+		log.Printf("Failed to save transactions for block %d: %v", blockNumber, err)
+	}
 }

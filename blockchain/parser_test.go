@@ -2,7 +2,9 @@ package blockchain
 
 import (
 	"encoding/json"
+	"math/big"
 	"testing"
+	"truswallet/storage"
 )
 
 // MockJSONRPCClient is a mock of the JSONRPCClient for testing purposes.
@@ -20,7 +22,7 @@ func TestGetCurrentBlock(t *testing.T) {
 	mockClient := &MockJSONRPCClient{
 		Response: json.RawMessage(`"0x5BAD55"`),
 	}
-	parser := NewEthereumParser(mockClient)
+	parser := NewEthereumParser(mockClient, storage.NewInMemoryStorage())
 
 	blockNumber, err := parser.GetCurrentBlock()
 	if err != nil {
@@ -34,7 +36,7 @@ func TestGetCurrentBlock(t *testing.T) {
 }
 
 func TestSubscribe(t *testing.T) {
-	parser := NewEthereumParser(nil) // Client is not used in Subscribe
+	parser := NewEthereumParser(nil, storage.NewInMemoryStorage()) // Client is not used in Subscribe
 
 	address := "0x123"
 	subscribed := parser.Subscribe(address)
@@ -54,21 +56,14 @@ func TestGetTransactions(t *testing.T) {
 	mockClient := &MockJSONRPCClient{}
 
 	// Initialize the parser with the mock client
-	parser := NewEthereumParser(mockClient)
+	parser := NewEthereumParser(mockClient, storage.NewInMemoryStorage())
 
 	// Manually subscribe an address and add transactions for testing
 	testAddress := "0xTestAddress"
 	parser.Subscribe(testAddress)
 
-	inboundTx := Transaction{Hash: "0xInbound", From: "0xFrom", To: testAddress, Value: "100"}
-	outboundTx := Transaction{Hash: "0xOutbound", From: testAddress, To: "0xTo", Value: "50"}
-
-	// Directly manipulate the parser's state for the test (bypassing the FetchBlockTransactions method)
-	parser.transactions[testAddress] = AddressTransactions{
-		Inbound:  []Transaction{inboundTx},
-		Outbound: []Transaction{outboundTx},
-	}
-
+	inboundTx := Transaction{Hash: "0xInbound", To: testAddress, Value: big.NewInt(100)}
+	outboundTx := Transaction{Hash: "0xOutbound", To: "0xTo", Value: big.NewInt(200)}
 	// Execution: Retrieve transactions for the test address
 	transactions := parser.GetTransactions(testAddress)
 

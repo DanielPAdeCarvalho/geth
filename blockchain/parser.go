@@ -3,9 +3,13 @@ package blockchain
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"math/big"
 	"sync"
 	"truswallet/client"
+	"truswallet/storage"
+
+	"github.com/ethereum/go-ethereum/core/types"
 )
 
 // Parser defines an interface for parsing blockchain data.
@@ -26,28 +30,24 @@ type AddressTransactions struct {
 }
 
 type Transaction struct {
-	Hash     string // Transaction hash
-	From     string // Sender address
-	To       string // Recipient address
-	Value    string // Amount transferred
-	GasPrice string // Gas price
-	GasUsed  uint64 // Gas used
+	Hash     string   // Transaction hash
+	To       string   // Recipient address
+	Value    *big.Int // Amount transferred
+	GasPrice *big.Int // Gas price
+	GasUsed  uint64   // Gas used
 }
 
 type EthereumParser struct {
-	subscribedAddresses map[string]bool
-	// transactions stores a list of transactions for each subscribed address.
-	// The key is the address, and the value is a slice of Transactions.
-	transactions map[string]AddressTransactions
-	client       client.JSONRPCClient // JSON-RPC client to interact with the blockchain node
-	mutex        sync.RWMutex         // Protects subscribedAddresses and transactions
+	storage storage.Storage
+	client  client.JSONRPCClient // JSON-RPC client to interact with the blockchain node
+	mutex   sync.RWMutex         // Protects subscribedAddresses and transactions
 }
 
-func NewEthereumParser(client client.JSONRPCClient) *EthereumParser {
+func NewEthereumParser(client client.JSONRPCClient, storage storage.Storage) *EthereumParser {
 	return &EthereumParser{
-		subscribedAddresses: make(map[string]bool),
-		transactions:        make(map[string]AddressTransactions),
-		client:              client,
+		client:  client,
+		storage: storage,
+		mutex:   sync.RWMutex{},
 	}
 }
 
@@ -75,30 +75,49 @@ func (p *EthereumParser) GetCurrentBlock() (int, error) {
 // Subscribe adds an Ethereum address to the list of subscribed addresses.
 // Returns true if the address was added, false if it was already subscribed.
 func (p *EthereumParser) Subscribe(address string) bool {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
-	// Check if the address is already subscribed
-	if _, exists := p.subscribedAddresses[address]; exists {
+	// Locking is handled within the storage package if needed
+	if _, exists := storage.SubscribedAddresses[address]; exists {
 		return false
 	}
-
-	// Subscribe the address
-	p.subscribedAddresses[address] = true
-
+	storage.Subscribe(address)
 	return true
 }
 
+// GetTransactions retrieves transactions for a given address from the storage.
 func (p *EthereumParser) GetTransactions(address string) []Transaction {
-	p.mutex.RLock()
-	defer p.mutex.RUnlock()
+	// Fetch transactions from storage
+	txs, err := p.storage.GetTransactionsByAddress(address)
+	if err != nil {
+		log.Printf("Failed to get transactions for address %s: %v", address, err)
+		return nil
+	}
 
+	// Convert types.Transaction (from go-ethereum) to custom Transaction type.
 	var transactions []Transaction
-
-	if addrTxs, exists := p.transactions[address]; exists {
-		// Combine inbound and outbound transactions
-		transactions = append(transactions, addrTxs.Inbound...)
-		transactions = append(transactions, addrTxs.Outbound...)
+	for _, tx := range txs {
+		customTx := ConvertToCustomTransactionType(tx)
+		transactions = append(transactions, customTx)
 	}
 
 	return transactions
+}
+
+func ConvertToCustomTransactionType(tx types.Transaction) Transaction {
+	// tx.To() can be nil for contract creation transactions
+	to := ""
+	if tx.To() != nil {
+		to = tx.To().Hex()
+	}
+
+	value := tx.Value()
+	gasPrice := tx.GasPrice()
+	gasUsed := tx.Gas()
+
+	return Transaction{
+		Hash:     tx.Hash().Hex(),
+		To:       to,
+		Value:    value,
+		GasPrice: gasPrice,
+		GasUsed:  gasUsed,
+	}
 }
